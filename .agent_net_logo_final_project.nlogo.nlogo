@@ -38,6 +38,7 @@ turtles-own [
   dead?                  ; is the patient dead?
   dead-counter           ; counts up to 24 and removes dead patient
 
+
   health                 ; All start with 100%
   health_deteriation     ; Random value deteriorating health (0.4 - 1)
   infection_rate        ; Random rate patients infect others (0.4 - 1)
@@ -61,6 +62,7 @@ to setup
 
   set original-patient-list sort patients
   set patient-care-queue (list original-patient-list)
+
   let counter 1
   while [counter <= amount_of_patients] [
     add-patient (70 + random 30)
@@ -280,97 +282,105 @@ end
 ; STAFF BEHAVIOR
 ;--------------------------------
 
-
+;; this function allows the staff to know where to go in each state.
 to staff-movement
   ask staffs[
-
-     if nurse-state = "resting" [
+    if nurse-state = "resting" [
       move-to one-of stations
-      set resting-counter resting-counter + 1
-
-      if resting-counter > 5 [
-        set nurse-state "go-to-station"
-        set resting-counter 0
-        set work-counter 5 + random 6
-      ]
-      stop
     ]
 
-    if work-counter = 0 [
-      if nurse-state != "resting" [
-        set nurse-state "resting"
-        stop
+    if nurse-state = "go-to-station" [
+      move-to one-of stations
+    ]
+
+    if nurse-state = "go-to-patient"  and current-target != nobody[
+      move-to current-target
     ]
   ]
+end
 
-    if length patient-care-queue <= 0 [set patient-care-queue original-patient-list]
+;; this function gives the flow of how the staff moves around and what happens in each
+;; state
+to staff-state-changes
+  ask staffs[
+    ; if staff is done with working and not resting then they should go rest
+    if work-counter <= 0 and nurse-state != "resting"[
+      set nurse-state "resting"
+      set resting-counter 0
+    ]
+
+    ; if staff is resting right now then the timer starts and when they are done with
+    ; working, they get assigned with new (random) shifts now and they go to station
+    ;to pick new patient from the list
+    if nurse-state = "resting"[
+      set resting-counter resting-counter + 1
+      if resting-counter > 5 [
+        set nurse-state "go-to-station"
+        set work-counter (5 + random 6)
+      ]
+    ]
+
+    ; if the patient queue is empty it means that no one else to treat so can start the
+    ; treatment cycle again, so sets the queue to the original (alive) patient list.
+    if length patient-care-queue <= 0 [
+      set patient-care-queue original-patient-list
+    ]
+
+    ; this part allows the staff to take a patient from the queue if any patient is waiting to get treated.
     if nurse-state = "go-to-station"[
       move-to one-of stations
-
-
-    if length patient-care-queue > 0 [
+      if length patient-care-queue > 0 [
         let next-patient one-of patient-care-queue
         set patient-care-queue remove next-patient patient-care-queue
         set current-target next-patient
         set nurse-state "go-to-patient"
-  ]
-
+      ]
     ]
 
-
-    ifelse nurse-state = "go-to-patient" and current-target != nobody and not [dead?] of current-target [
-        move-to current-target
-        ask current-target[
-          set health health + 1
-          if infected? and incubation-counter > 0 [
-            set incubation-counter incubation-counter - 1
-          ]
-      ]
-        set nurse-state "treating"
-
-    ][
-        ;set current-target nobody  should be in treating
-        ;set nurse-state "go-to-station" should be treating
-      ]
-
-    if nurse-state = "treating"[
-
-      if treatment-counter = 3 [
-        ask current-target[
-          if not infected? [
-          let patient_infection_rate infection_rate]
-          let base_chance_infection 0.5
-          let infection-chance (base_chance_infection * infection_rate * (1 - health / 100))
-            if infection-chance > 5 [
-              set infected? true
-
-          ]
-      ]
-
-        if infected? [
-          set staff-health staff-health - 5
-          ask current-target[
-            if not infected?[
-              set exposure-counter exposure-counter + 1
-
-              if exposure-counter >= exposure-threshold [
-                set exposed? true
-                set incubation-counter incubation-period
-                set color orange
-            ]
-          ]
-        ]
-          set work-counter work-counter - 1
-          set current-target nobody
-          set nurse-state "go-to-station"
-          set treatment-counter 0
-
-      ]
-
+    ; in this case when the staff is going to the a patient, they set there state to "treating"
+    if nurse-state = "go-to-patient" and current-target != nobody and not [dead?] of current-target [
+      set nurse-state "treating"
+      set treatment-counter 0
+    ]
   ]
-  ]
-  ]
+end
 
+;; this function explains the behaviour when the staff is interacting with the patient
+to staff-patient-interaction
+  ask staffs with [nurse-state = "treating"][
+    set treatment-counter treatment-counter + 1    ;increases the treatment hours as they stay with the patient and gives them treatment
+    ask current-target[
+      set health health + 3
+    ]
+
+    ; after the treatment is done they go back to the station to take a new patient to treat
+    if treatment-counter = 3[
+      set nurse-state "go-to-station"
+      set treatment-counter 0
+      set current-target nobody
+    ]
+
+    ; if staff is exposed to the disease and is in incubation period, there is a 33% chnace that they
+    ; can expose the patinet without an infection to this disease
+    if exposed? and not [infected?] of current-target and not [exposed?] of current-target[
+        person-exposed 33
+      ]
+
+    ; if the staff is not exposed to the disease but the current patient is infected, there is a 15% chance that
+    ; the staff can get exposed
+    if not exposed? and [infected?] of current-target[
+        person-exposed 15
+      ]
+    ]
+end
+
+;; this function deceases the working hours of the staff if they are not resting (like a countdown)
+to staff-working
+  ask staffs[
+    if nurse-state != "resting"[
+      set work-counter work-counter - 1
+    ]
+  ]
 end
 
 ;--------------------------------
