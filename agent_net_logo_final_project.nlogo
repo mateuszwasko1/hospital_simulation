@@ -44,6 +44,10 @@ turtles-own [
 
   current-target
   nurse-state
+  work-counter
+  resting-counter
+  treatment-counter
+  staff-health
 ]
 
 ;--------------------------------
@@ -55,7 +59,8 @@ to setup
   setup-patches
   generate-beds
 
-  set original-patient-list []
+  set original-patient-list sort patients
+  set patient-care-queue (list original-patient-list)
   let counter 1
   while [counter <= amount_of_patients] [
     add-patient 100
@@ -173,7 +178,12 @@ to setup-staff
       setxy x y
       set shape "person doctor"
       set color yellow
-        set size 3
+      set size 3
+      set staff-health 100
+      set infected? false
+      set exposed? false
+      set exposure-counter 0
+      set incubation-counter 0
       ]
       set placed_staff placed_staff + 1
     ]
@@ -220,18 +230,46 @@ end
 ;--------------------------------
 
 to go
-  staff-movement
   ;vector-movement
   ;vector-transmission
-  ;patient-exposure
-  ;patient-incubation
+  patient-exposure
+  patient-incubation
+  staff-incubation
+  staff-exposure
   ;patient-contamination
-  ;ventilation-clear
+  ventilation-clear
+  staff-movement
   spread-air-cotamination
   emit-air-contamination
   update-color-patches
   simulate-wind
+  update-labels
   tick
+end
+
+
+;---------------------
+; prettier interface
+;---------------------
+
+
+ to update-labels
+  ask patients[
+    if infected? [
+      set label (word health)
+      set label-color black
+
+    ]
+    if not infected? [
+      set label (word health)
+      set label-color black
+
+    ]
+  ]
+
+  ask staffs[
+    set label (word work-counter " R:" resting-counter)
+  ]
 end
 
 
@@ -243,21 +281,44 @@ end
 to staff-movement
   ask staffs[
 
+     if nurse-state = "resting" [
+      move-to one-of stations
+      set resting-counter resting-counter + 1
+
+      if resting-counter > 5 [
+        set nurse-state "go-to-station"
+        set resting-counter 0
+        set work-counter 5 + random 6
+      ]
+      stop
+    ]
+
+    if work-counter = 0 [
+      if nurse-state != "resting" [
+        set nurse-state "resting"
+        stop
+    ]
+  ]
+
     if length patient-care-queue <= 0 [set patient-care-queue original-patient-list]
     if nurse-state = "go-to-station"[
       move-to one-of stations
 
+
     if length patient-care-queue > 0 [
         let next-patient one-of patient-care-queue
+        set patient-care-queue remove next-patient patient-care-queue
         set current-target next-patient
         set nurse-state "go-to-patient"
-  ]]
+  ]
+
+    ]
 
 
     ifelse nurse-state = "go-to-patient" and current-target != nobody and not [dead?] of current-target [
         move-to current-target
         ask current-target[
-          set health health + 10
+          set health health + 1
           if infected? and incubation-counter > 0 [
             set incubation-counter incubation-counter - 1
           ]
@@ -270,15 +331,42 @@ to staff-movement
       ]
 
     if nurse-state = "treating"[
-      ask current-target[if infected? [let patient_infection_rate infection_rate]
-      let base_chance_infection 0.5
-      set infected? ((base_chance_infection * infection_rate * (1 - health / 100)) > 5)
+      set treatment-counter treatment-counter + 1
+      if treatment-counter = 3 [
+        ask current-target[
+          if not infected? [
+          let patient_infection_rate infection_rate]
+          let base_chance_infection 0.5
+          let infection-chance (base_chance_infection * infection_rate * (1 - health / 100))
+            if infection-chance > 5 [
+              set infected? true
+
+          ]
       ]
+
+        if infected? [
+          set staff-health staff-health - 5
+          ask current-target[
+            if not infected?[
+              set exposure-counter exposure-counter + 1
+
+              if exposure-counter >= exposure-threshold [
+                set exposed? true
+                set incubation-counter incubation-period
+                set color orange
+            ]
+          ]
+        ]
+          set work-counter work-counter - 1
           set current-target nobody
           set nurse-state "go-to-station"
+          set treatment-counter 0
+
+      ]
 
   ]
-]
+  ]
+  ]
 
 end
 
@@ -324,7 +412,7 @@ end
 ;--------------------------------
  ;; NOT DONE YET
 to patient-exposure
-  ask patients with [exposed? and not infected?] [
+  ask patients with [not exposed? and not infected?] [
     if [contamination-level] of patch-here > 0 [
       set exposure-counter exposure-counter + 1]
       ifelse exposure-counter >= exposure-threshold [ set exposed? true set incubation-counter incubation-period set color orange ][ set exposure-counter 0 ]
@@ -337,7 +425,29 @@ to patient-incubation
     set incubation-counter incubation-counter - 1
     if incubation-counter = 0 [ set infected? true set color red ]
   ]
+
 end
+
+to staff-exposure
+  ask staffs with [exposed? and not infected?] [
+    if current-target != nobody and [infected?] of current-target [
+      set exposure-counter exposure-counter + 1
+    ]
+    if exposure-counter >= exposure-threshold [
+      set exposed? true
+      set incubation-counter incubation-period
+      set color orange
+    ]
+  ]
+end
+
+to staff-incubation
+  ask staffs with [not exposed? and incubation-counter > 0][
+    set incubation-counter incubation-counter - 1
+    if incubation-counter = 0 [ set infected? true set color red ]
+  ]
+end
+
 
 ;--------------------------------
 ; AIRBORNE CONTAMINATION
