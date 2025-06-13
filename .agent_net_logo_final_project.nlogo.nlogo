@@ -15,19 +15,19 @@ patches-own [
 ]
 
 globals [
-  room-size
-  available-beds
-  occupied-beds
-  wind-direction
+  room-size ;It can be one of the following: 32, 48, 96
+  available-beds ; Number of beds that are available
+  occupied-beds ; Beds with patients
+  wind-direction ; Direction of wind
 
-  patient-care-queue
-  original-patient-list
+  original-patient-list ; The total list of alive patients
+  patient-care-queue ; List of patients that need to be treated
 ]
 
-breed [ patients patient ]
-breed [ vectors vector ]
-breed [ staffs staff ]
-breed [ stations station ]
+breed [ patients patient ] ; The patients
+breed [ vectors vector ] ; The mosquitos
+breed [ staffs staff ] ; The nurses
+breed [ stations station ] ; Nurses stations
 
 
 turtles-own [
@@ -36,7 +36,8 @@ turtles-own [
   incubation-counter     ; ticks until infectious
   infected?              ; is infectious and contaminates air
   dead?                  ; is the patient dead?
-  dead-counter           ; patints are removed after 24hrs
+  dead-counter           ; counts up to 24 and removes dead patient
+
 
   health                 ; All start with 100%
   health_deteriation     ; Random value deteriorating health (0.4 - 1)
@@ -61,9 +62,10 @@ to setup
 
   set original-patient-list sort patients
   set patient-care-queue (list original-patient-list)
+
   let counter 1
   while [counter <= amount_of_patients] [
-    add-patient 100
+    add-patient (70 + random 30)
     set counter (counter + 1)
   ]
 
@@ -74,9 +76,9 @@ to setup
   setup-staff
   setup-stations
   ask vectors [ die ]
+
   set wind-direction random 360
 
-  set patient-care-queue original-patient-list
   reset-ticks
 end
 
@@ -134,6 +136,7 @@ to generate-beds
   ]
 end
 
+; Adds patients to avaliable beds (if any are available), with a specific starting health
 to add-patient [init_health]
   if length available-beds > 0 [
     let chosen one-of available-beds
@@ -161,6 +164,7 @@ to add-patient [init_health]
 
 end
 
+; Sets up the staff next to random patients
 to setup-staff
   ask staffs [ die ]
   let amount_of_staff floor(amount_of_patients / ratio_of_staff)
@@ -190,6 +194,7 @@ to setup-staff
   ]
 end
 
+;
 to setup-stations
   ask stations [ die ]
   let columns floor ((max-pxcor - min-pxcor + 1) / room-size)
@@ -277,97 +282,105 @@ end
 ; STAFF BEHAVIOR
 ;--------------------------------
 
-
+;; this function allows the staff to know where to go in each state.
 to staff-movement
   ask staffs[
-
-     if nurse-state = "resting" [
+    if nurse-state = "resting" [
       move-to one-of stations
-      set resting-counter resting-counter + 1
-
-      if resting-counter > 5 [
-        set nurse-state "go-to-station"
-        set resting-counter 0
-        set work-counter 5 + random 6
-      ]
-      stop
     ]
 
-    if work-counter = 0 [
-      if nurse-state != "resting" [
-        set nurse-state "resting"
-        stop
+    if nurse-state = "go-to-station" [
+      move-to one-of stations
+    ]
+
+    if nurse-state = "go-to-patient"  and current-target != nobody[
+      move-to current-target
     ]
   ]
+end
 
-    if length patient-care-queue <= 0 [set patient-care-queue original-patient-list]
+;; this function gives the flow of how the staff moves around and what happens in each
+;; state
+to staff-state-changes
+  ask staffs[
+    ; if staff is done with working and not resting then they should go rest
+    if work-counter <= 0 and nurse-state != "resting"[
+      set nurse-state "resting"
+      set resting-counter 0
+    ]
+
+    ; if staff is resting right now then the timer starts and when they are done with
+    ; working, they get assigned with new (random) shifts now and they go to station
+    ;to pick new patient from the list
+    if nurse-state = "resting"[
+      set resting-counter resting-counter + 1
+      if resting-counter > 5 [
+        set nurse-state "go-to-station"
+        set work-counter (5 + random 6)
+      ]
+    ]
+
+    ; if the patient queue is empty it means that no one else to treat so can start the
+    ; treatment cycle again, so sets the queue to the original (alive) patient list.
+    if length patient-care-queue <= 0 [
+      set patient-care-queue original-patient-list
+    ]
+
+    ; this part allows the staff to take a patient from the queue if any patient is waiting to get treated.
     if nurse-state = "go-to-station"[
       move-to one-of stations
-
-
-    if length patient-care-queue > 0 [
+      if length patient-care-queue > 0 [
         let next-patient one-of patient-care-queue
         set patient-care-queue remove next-patient patient-care-queue
         set current-target next-patient
         set nurse-state "go-to-patient"
-  ]
-
+      ]
     ]
 
-
-    ifelse nurse-state = "go-to-patient" and current-target != nobody and not [dead?] of current-target [
-        move-to current-target
-        ask current-target[
-          set health health + 1
-          if infected? and incubation-counter > 0 [
-            set incubation-counter incubation-counter - 1
-          ]
-      ]
-        set nurse-state "treating"
-
-    ][
-        set current-target nobody
-        set nurse-state "go-to-station"
-      ]
-
-    if nurse-state = "treating"[
-      set treatment-counter treatment-counter + 1
-      if treatment-counter = 3 [
-        ask current-target[
-          if not infected? [
-          let patient_infection_rate infection_rate]
-          let base_chance_infection 0.5
-          let infection-chance (base_chance_infection * infection_rate * (1 - health / 100))
-            if infection-chance > 5 [
-              set infected? true
-
-          ]
-      ]
-
-        if infected? [
-          set staff-health staff-health - 5
-          ask current-target[
-            if not infected?[
-              set exposure-counter exposure-counter + 1
-
-              if exposure-counter >= exposure-threshold [
-                set exposed? true
-                set incubation-counter incubation-period
-                set color orange
-            ]
-          ]
-        ]
-          set work-counter work-counter - 1
-          set current-target nobody
-          set nurse-state "go-to-station"
-          set treatment-counter 0
-
-      ]
-
+    ; in this case when the staff is going to the a patient, they set there state to "treating"
+    if nurse-state = "go-to-patient" and current-target != nobody and not [dead?] of current-target [
+      set nurse-state "treating"
+      set treatment-counter 0
+    ]
   ]
-  ]
-  ]
+end
 
+;; this function explains the behaviour when the staff is interacting with the patient
+to staff-patient-interaction
+  ask staffs with [nurse-state = "treating"][
+    set treatment-counter treatment-counter + 1    ;increases the treatment hours as they stay with the patient and gives them treatment
+    ask current-target[
+      set health health + 3
+    ]
+
+    ; after the treatment is done they go back to the station to take a new patient to treat
+    if treatment-counter = 3[
+      set nurse-state "go-to-station"
+      set treatment-counter 0
+      set current-target nobody
+    ]
+
+    ; if staff is exposed to the disease and is in incubation period, there is a 33% chnace that they
+    ; can expose the patinet without an infection to this disease
+    if exposed? and not [infected?] of current-target and not [exposed?] of current-target[
+        person-exposed 33
+      ]
+
+    ; if the staff is not exposed to the disease but the current patient is infected, there is a 15% chance that
+    ; the staff can get exposed
+    if not exposed? and [infected?] of current-target[
+        person-exposed 15
+      ]
+    ]
+end
+
+;; this function deceases the working hours of the staff if they are not resting (like a countdown)
+to staff-working
+  ask staffs[
+    if nurse-state != "resting"[
+      set work-counter work-counter - 1
+    ]
+  ]
 end
 
 ;--------------------------------
@@ -586,7 +599,7 @@ amount_of_patients
 amount_of_patients
 10
 144
-38.0
+144.0
 1
 1
 NIL
