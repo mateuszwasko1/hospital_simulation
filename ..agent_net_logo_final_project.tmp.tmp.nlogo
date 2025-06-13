@@ -1,10 +1,10 @@
-; Disease X Outbreak Model with Airborne & Vector Transmission
+; Disease X Outbreak Model with Airborne & mosquito Transmission
 ; Interface widgets required:
 ;  - Chooser 'room-size': "small"/"medium"/"large"
 ;  - Sliders:
 ;    * 'grid-size'          : size of each room cell (patches)
 ;    * 'amount_of_patients'  : initial number of patients per cell
-;    * 'amount_of_rats'      : total number of vector agents
+;    * 'amount_of_rats'      : total number of mosquito agents
 ;    * 'propagation-rate'    : airborne emission per infected patient per tick
 ;    * 'incubation-period'   : ticks from exposure to infectiousness
 ;    * 'ventilation-hours'   : hours for contamination level to halve
@@ -22,10 +22,12 @@ globals [
 
   original-patient-list ; The total list of alive patients
   patient-care-queue ; List of patients that need to be treated
+
+  amount-of-mosquitos ; Amount of mosquitos depending on the ventilation
 ]
 
 breed [ patients patient ] ; The patients
-breed [ vectors vector ] ; The mosquitos
+breed [ mosquitos mosquito ] ; The mosquitos
 breed [ staffs staff ] ; The nurses
 breed [ stations station ] ; Nurses stations
 
@@ -37,7 +39,6 @@ turtles-own [
   infected?              ; is infectious and contaminates air
   dead?                  ; is the patient dead?
   dead-counter           ; counts up to 24 and removes dead patient
-
 
   health                 ; All start with 100%
   health_deteriation     ; Random value deteriorating health (0.4 - 1)
@@ -57,6 +58,8 @@ turtles-own [
 
 to setup
   clear-all
+  ask mosquitos [ die ]
+
   setup-patches
   generate-beds
 
@@ -75,9 +78,11 @@ to setup
   ]
   setup-staff
   setup-stations
-  ask vectors [ die ]
+
 
   set wind-direction random 360
+
+  set amount-of-mosquitos floor(ventilation-hours / 3.3)
 
   reset-ticks
 end
@@ -151,7 +156,7 @@ to add-patient [init_health]
       set exposed? false
       set dead? false
       set exposure-counter 0
-      set incubation-counter 0
+      set incubation-counter 72 + random 48 ; sets an incubation period between 3 and 5 days
       set health init_health
       set health_deteriation (0.4 + random-float 0.6)
       set infection_rate (0.4 + random-float 0.6)
@@ -221,7 +226,7 @@ end
 
 
 to add-mosquitos
-  create-vectors 1 [
+  create-mosquitos 1 [
     set shape "bug"
     set color brown
     set size 0.8
@@ -235,12 +240,12 @@ end
 ;--------------------------------
 
 to go
-  ;vector-movement
-  ;vector-transmission
+  ;mosquito-movement
+  ;mosquito-transmission
+  exposed-counter patients
+  exposed-counter staffs
+
   patient-exposure
-  patient-incubation
-  staff-incubation
-  staff-exposure
   ;patient-contamination
   ventilation-clear
   staff-movement
@@ -387,38 +392,32 @@ to staff-working
 end
 
 ;--------------------------------
-; PATIENT BEHAVIOR
+; mosquito BEHAVIOR
 ;--------------------------------
 
-to remove-dead-patients
-  ask patients with [dead?] [
-    set dead-counter dead-counter + 1
-    if dead-counter >= 24[
-      set original-patient-list remove myself original-patient-list
-      set patient-care-queue remove myself patient-care-queue
-      set available-beds lput (list xcor ycor) available-beds
 
-      die
-  ]]
+to mosquito-movement
+  ; Global Function
+  ; Moves the mosquito, they spin in a random direction and move forward by 1 patch
+  ask mosquitos [ rt random 360 fd 1 ]
 end
 
-;--------------------------------
-; VECTOR BEHAVIOR
-;--------------------------------
+; mosquitos transmit with patients
+to mosquito-transmission
+  ask mosquitos [
+    let victim patients-here
+    if any? victim [
+      let v one-of victims
+      ; If the person is not infected and the mosquito is infected, the person can get the disease from mosquito
+      if infected? and not [infected?] of v [
+        ask v [person-exposed 70] ]
+      ; If the person is infected and the mosquito is not, the mosquito can get the disease from the person
+      if not infected? and [infected?] of v [
+        ; The chances that a mosquito gets the disease is between 18% and 58%
+        if random 100 < 18 + random 40
+        set infected? true set color red
 
-;; NOT DONE YET
-to vector-movement
-  ask vectors [ rt random 360 fd 1 ]
-end
-
-; vectors transmit with patients
-to vector-transmission
-  ask vectors [
-    let pats patients-here
-    if any? pats [
-      let p one-of pats
-      if infected? and not [infected?] of p [ ask p [ set exposed? true set incubation-counter incubation-period set color orange ] ]
-      if not infected? and [infected?] of p [ set infected? true set color red ]
+      ]
     ]
   ]
 end
@@ -426,7 +425,44 @@ end
 ;--------------------------------
 ; PATIENT EXPOSURE & INCUBATION
 ;--------------------------------
- ;; NOT DONE YET
+
+to person-exposed [chance]
+  ; Agent Function
+  ; Based on the input "chance" we get a probability that the patient gets exposed.
+  ; If they are exposed, we make the coresponding changes
+  if random-float 100 < chance and not exposed? and not infected? [
+  set exposed? true
+    set color yellow
+  ]
+end
+
+to exposed-counter [person] ; Input is the agentset (either patients or staffs)
+  ; Global Function
+  ; Updates the exposure counter for both patients and staff
+  ; If the patient is over the counter (they have been exposed
+  ask person with [exposed?][
+    set incubation-counter incubation-counter - 1
+    if exposure-counter <= 0 [
+      if breed = staff [die]
+      set infected? true
+      set color red
+    ]
+  ]
+end
+
+to remove-dead-patients
+  ; Global Function
+  ; Checks if the patient has died, if so then we wait 24 hours before they are removed
+  ask patients with [dead?] [
+    set dead-counter dead-counter + 1
+    if dead-counter >= 24[
+      set original-patient-list remove myself original-patient-list
+      set patient-care-queue remove myself patient-care-queue
+      set available-beds lput (list xcor ycor) available-beds
+      die
+  ]]
+end
+
 to patient-exposure
   ask patients with [not exposed? and not infected?] [
     if [contamination-level] of patch-here > 0 [
@@ -435,34 +471,7 @@ to patient-exposure
   ]
 end
 
-; countdown incubation to infectious
-to patient-incubation
-  ask patients with [exposed? and incubation-counter > 0] [
-    set incubation-counter incubation-counter - 1
-    if incubation-counter = 0 [ set infected? true set color red ]
-  ]
 
-end
-
-to staff-exposure
-  ask staffs with [exposed? and not infected?] [
-    if current-target != nobody and [infected?] of current-target [
-      set exposure-counter exposure-counter + 1
-    ]
-    if exposure-counter >= exposure-threshold [
-      set exposed? true
-      set incubation-counter incubation-period
-      set color orange
-    ]
-  ]
-end
-
-to staff-incubation
-  ask staffs with [not exposed? and incubation-counter > 0][
-    set incubation-counter incubation-counter - 1
-    if incubation-counter = 0 [ set infected? true set color red ]
-  ]
-end
 
 
 ;--------------------------------
@@ -472,8 +481,8 @@ end
 ; ventilation clears contamination
 to ventilation-clear
   ask patches [
-    let decay 1 / ventilation-hours
-    set contamination-level max (list 0 (contamination-level * (1 - decay)))
+    let decay  ventilation-hours / 100
+    set contamination-level max (list 0 (contamination-level * decay))
   ]
 end
 
@@ -518,7 +527,7 @@ end
 
 to simulate-wind
   ; Simulates natural ventilation, blowing in a random direction
-  let wind-strength 1 / ventilation-hours
+  let wind-strength ventilation-hours / 100
 
   ask patches with [contamination-level > 0] [
     let target patch-at-heading-and-distance wind-direction 1
@@ -649,22 +658,7 @@ ventilation-hours
 ventilation-hours
 0
 100
-6.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-22
-468
-194
-501
-incubation-period
-incubation-period
-0
-100
-50.0
+15.0
 1
 1
 NIL
