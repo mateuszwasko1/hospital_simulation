@@ -50,6 +50,8 @@ turtles-own [
   resting-counter
   treatment-counter
   staff-health
+
+  mosquito-age ; The age of the mosquito after they get infected
 ]
 
 ;--------------------------------
@@ -68,7 +70,7 @@ to setup
 
   let counter 1
   while [counter <= amount_of_patients] [
-    add-patient (70 + random 30)
+    add-patient (50 + random 50)
     set counter (counter + 1)
   ]
 
@@ -161,7 +163,7 @@ to add-patient [init_health]
       set exposed? false
       set dead? false
       set exposure-counter 0
-      set incubation-counter 72 + random 48 ; sets an incubation period between 3 and 5 days
+      set incubation-counter (72 + random 48) ; sets an incubation period between 3 and 5 days
       set health init_health
       set health_deteriation (0.4 + random-float 0.6)
       set infection_rate (0.4 + random-float 0.6)
@@ -183,8 +185,8 @@ to setup-staff
 
   while [placed_staff < amount_of_staff] [
     let bed one-of occupied-beds
-    let x (item 0 bed) - 3
-    let y (item 1 bed) - 3
+    let x (item 0 bed) + 3
+    let y (item 1 bed) + 3
 
 
     if not any? turtles-on patch x y [
@@ -206,7 +208,7 @@ to setup-staff
   ]
 end
 
-;
+
 to setup-stations
   ask stations [ die ]
   let columns floor ((max-pxcor - min-pxcor + 1) / room-size)
@@ -239,6 +241,7 @@ to add-mosquitos
     set size 0.8
     setxy random-xcor random-ycor
     set infected? false
+    set mosquito-age 0
   ]
 end
 
@@ -259,14 +262,16 @@ to go
 
   exposed-counter patients ; Updates exposure counter for patients
   exposed-counter staffs ; Updates exposure counter for patients
+  get-infected ; When a patient is on a contaminated path, they get exposed
   remove-dead-patients ; Removes dead patients after 24 hours
+  health-decrease ; When a patient is infected, their health deteriorates
 
 
-  ;ventilation-clear ; Clears contamination from patches
+  ventilation-clear ; Clears contamination from patches
   emit-air-contamination ; Infecting patch from patient
   spread-air-cotamination ; Spreads contmaination to neighbouring patches
   update-color-patches ; Updates the patch colors
-  ;simulate-wind ; Simulates the wind, blowing in a random direction
+  simulate-wind ; Simulates the wind, blowing in a random direction
 
   tick
 end
@@ -313,7 +318,9 @@ to staff-movement
     ]
 
     if nurse-state = "go-to-patient"  and current-target != nobody[
-      move-to current-target
+      let px [xcor] of current-target
+      let py [ycor] of current-target
+      move-to patch (px + 3) (py + 3 )
     ]
   ]
 end
@@ -361,7 +368,9 @@ to staff-state-changes
 
     if nurse-state = "treating" [
       set treatment-counter treatment-counter + 1    ;increases the treatment hours as they stay with the patient and gives them treatment
-      ask current-target[set health health + 1]
+      ask current-target[
+        if health + 1 <= 100 [set health health + 1]
+      ]
 
       ; if staff is exposed to the disease and is in incubation period, there is a 33% chnace that they
       ; can expose the patinet without an infection to this disease
@@ -420,6 +429,18 @@ to mosquito-transmission
   ]
 end
 
+
+to mosquito-dead
+  ask mosquitos[
+    if infected?[
+      set mosquito-age mosquito-age + 1
+      if mosquito-age = 480[
+        die
+      ]
+    ]
+  ]
+
+end
 ;--------------------------------
 ; PATIENT EXPOSURE & INCUBATION
 ;--------------------------------
@@ -440,7 +461,7 @@ to exposed-counter [person] ; Input is the agentset (either patients or staffs)
   ; If the patient is over the counter (they have been exposed
   ask person with [exposed?][
     set incubation-counter incubation-counter - 1
-    if exposure-counter <= 0 [
+    if incubation-counter <= 0 [
       if breed = staffs [die]
       set infected? true
       set color red
@@ -461,7 +482,32 @@ to remove-dead-patients
   ]]
 end
 
+to get-infected
+  ; When a patient is on an infected patch and they stay there until their exposure-counter reaches the threshold
+  ; the patient gets exposed.
+  let threshold 40
+  ask patients with [([contamination-level] of patch-here) > 0][
+  set exposure-counter exposure-counter + (contamination-level * 0.5)
+    if exposure-counter > threshold[person-exposed 100]
+  ]
+end
 
+to health-decrease
+  ; After being infected, the patients health deteriorates, when it hits 0 the patient has
+  ; a propability of survival. Then they either go home (in the simulation: die) or they die (in the simulation: remove-dead-patients)
+  ask patients with [infected?][
+  set health health - health_deteriation
+    if health <= 0 [
+      ifelse random 100 < 70 [remove-dead-patients][die]
+    ]
+  ]
+end
+
+to new-patients
+  let sick_patients count patients with [infected?]
+
+
+end
 ;--------------------------------
 ; AIRBORNE CONTAMINATION
 ;--------------------------------
@@ -478,9 +524,9 @@ end
 to emit-air-contamination
   ; Patch gets infected with a patients infection rate
   ask patients with [infected?][
-    let emision infection_rate * 100
+    let emision infection_rate * 10
     ask patch-here[
-      if (contamination-level + emision) <= 10[
+      if (contamination-level) <= 10[
       set contamination-level contamination-level + emision
     ]]
   ]
@@ -489,14 +535,14 @@ end
 to spread-air-cotamination
   ; When a patch is contaminated, it reduces by 20% and spreads equally to all its 8 neighbours
   ask patches with [contamination-level > 0] [
-    let decay contamination-level * 0.4
-    set contamination-level contamination-level - decay
+    let decay contamination-level * 0.5
+    set contamination-level contamination-level - (decay / 1.7)
 
     let spread-per-neighbor decay / 8
 
     ask neighbors [
       if pcolor != black[
-        if (contamination-level + spread-per-neighbor) <= 10 [
+        if (contamination-level) <= 10 [
         set contamination-level contamination-level + spread-per-neighbor
     ]]]
   ]
@@ -507,7 +553,7 @@ to update-color-patches
   ask patches [
     if pcolor != black[
     ifelse contamination-level > 0 [
-    set pcolor scale-color green (contamination-level) 10 0
+    set pcolor scale-color green (contamination-level) 15 0
     ][set pcolor white]
   ]]
 
@@ -519,16 +565,28 @@ to simulate-wind
 
   ask patches with [contamination-level > 0] [
     let target patch-at-heading-and-distance wind-direction 1
-    if target != nobody and [pcolor] of target != black [
+    if target != nobody [
       let flow contamination-level * wind-strength
       set contamination-level contamination-level - flow
-      ask target [
-        set contamination-level contamination-level + flow
+      if [pcolor] of target != black[
+        ask target [
+          if contamination-level + flow <= 10 [
+            set contamination-level contamination-level + flow
+          ]
+        ]
       ]
     ]
   ]
 end
 
+to mosquito-entering
+  let entry-number ventilation-hours / 10
+  while [amount-of-mosquitos <= amount-of-mosquitos + entry-number] [
+    add-mosquitos
+    set amount-of-mosquitos (amount-of-mosquitos + 1)
+  ]
+
+end
 
 
 ;--------------------------------
@@ -599,17 +657,17 @@ amount_of_patients
 amount_of_patients
 10
 144
-29.0
+144.0
 1
 1
 NIL
 HORIZONTAL
 
 BUTTON
-126
-89
-189
-122
+103
+110
+166
+143
 NIL
 go
 T
@@ -631,7 +689,7 @@ exposure-threshold
 exposure-threshold
 0
 100
-50.0
+49.0
 1
 1
 NIL
@@ -646,7 +704,7 @@ ventilation-hours
 ventilation-hours
 0
 100
-100.0
+11.0
 1
 1
 NIL
