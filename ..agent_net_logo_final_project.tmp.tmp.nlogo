@@ -498,7 +498,12 @@ to health-decrease
   ask patients with [infected?][
   set health health - health_deteriation
     if health <= 0 [
-      ifelse random 100 < 70 [remove-dead-patients][die]
+      ifelse random 100 < 70 [remove-dead-patients][
+        set original-patient-list remove self original-patient-list
+        set patient-care-queue remove self patient-care-queue
+        set available-beds lput (list xcor ycor) available-beds
+        die
+      ]
     ]
   ]
 end
@@ -657,7 +662,7 @@ amount_of_patients
 amount_of_patients
 10
 144
-144.0
+77.0
 1
 1
 NIL
@@ -689,7 +694,7 @@ exposure-threshold
 exposure-threshold
 0
 100
-49.0
+47.0
 1
 1
 NIL
@@ -704,7 +709,7 @@ ventilation-hours
 ventilation-hours
 0
 100
-11.0
+25.0
 1
 1
 NIL
