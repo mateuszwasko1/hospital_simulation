@@ -110,44 +110,7 @@ end
 
 ; spawn patients evenly, infect one
 
-to generate-beds
-  set available-beds []
-  set occupied-beds []
-  let columns floor ((max-pxcor - min-pxcor + 1) / room-size)
-  let rows floor ((max-pycor - min-pycor + 1) / room-size)
 
-  let spacing 7
-  let margin 2
-  ; To ensure that all room types have the same amount of max amount of patients
-  if size-of-room = "large"  [set margin 3]
-
-  let col 0
-  while [col < columns] [
-    let row 0
-    while [row < rows] [
-      let x0 min-pxcor + col * room-size
-      let y0 min-pycor + row * room-size
-      let max-cols floor ((room-size - 2 * margin) / spacing)
-      let max-rows floor ((room-size - 2 * margin) / spacing)
-
-      let i 0
-      while [i < max-cols] [
-        let j 0
-        while [j < max-rows] [
-          let px x0 + ((room-size - (max-cols - 1) * spacing) / 2) + (i * spacing)
-          let py y0 + ((room-size - (max-rows - 1) * spacing) / 2) + (j * spacing)
-          if px <= max-pxcor and py <= max-pycor [
-            set available-beds lput (list px py) available-beds
-          ]
-          set j j + 1
-        ]
-        set i i + 1
-      ]
-      set row row + 1
-    ]
-    set col col + 1
-  ]
-end
 
 ; Adds patients to avaliable beds (if any are available), with a specific starting health
 to add-patient [init_health sick?]
@@ -180,7 +143,7 @@ end
 ; Sets up the staff next to random patients
 to setup-staff
   ask staffs [ die ]
-  let amount_of_staff floor(amount_of_patients / ratio_of_staff)
+  let amount_of_staff floor(amount_of_patients / 2) ; We always start with 1:2 patient to staff ratio
 
   let placed_staff 0
 
@@ -199,7 +162,6 @@ to setup-staff
       set staff-health 100
       set infected? false
       set exposed? false
-      set exposure-counter 0
       set incubation-counter (72 + random 48) ; sets an incubation period between 3 and 5 days
 
       set work-counter 5 + random 5
@@ -257,7 +219,8 @@ to go
   staff-state-changes ; Tells staff what to do
 
   mosquito-movement ; Moves mosquito around
-  mosquito-transmission ; Mosquito behaviour when interacting with patient
+  mosquito-transmission-patient ; Mosquito behaviour when interacting with patient
+  mosquito-transmission-staff
   mosquito-dead
   mosquito-entering
 
@@ -348,10 +311,11 @@ to staff-state-changes
     ]
 
     if nurse-state = "treating" [
-      set treatment-counter treatment-counter + 1    ;increases the treatment hours as they stay with the patient and gives them treatment
+      let first-treatment-count (treatment-counter = 0)
       ask current-target[
-        if health + 1 <= 100 [set health health + 1]
+        if health + 1 <= 100 and first-treatment-count [set health health + 3]
       ]
+      set treatment-counter treatment-counter + 1    ;increases the treatment hours as they stay with the patient and gives them treatment
 
       ; if staff is exposed to the disease and is in incubation period, there is a 33% chnace that they
       ; can expose the patinet without an infection to this disease
@@ -361,7 +325,7 @@ to staff-state-changes
 
       ; if the staff is not exposed to the disease but the current patient is infected, there is a 15% chance that
       ; the staff can get exposed
-      if not exposed? and [infected?] of current-target [
+      if not exposed? and [infected?] of current-target[
         person-exposed 1 "patient"
       ]
 
@@ -403,9 +367,27 @@ to mosquito-movement
 end
 
 ; mosquitos transmit with patients
-to mosquito-transmission
+to mosquito-transmission-patient
   ask mosquitos [
     let victim patients-here
+    if any? victim [
+      let v one-of victim
+      ; If the person is not infected and the mosquito is infected, the person can get the disease from mosquito
+      if infected? and not [infected?] of v [
+        ask v [person-exposed 70 "mosquito"] ]
+      ; If the person is infected and the mosquito is not, the mosquito can get the disease from the person
+      if not infected? and [infected?] of v [
+        ; The chances that a mosquito gets the disease is between 18% and 58%
+        if random 100 < 18 + random 40[
+          set infected? true set color red]
+      ]
+    ]
+  ]
+end
+
+to mosquito-transmission-staff
+  ask mosquitos [
+    let victim staffs-here
     if any? victim [
       let v one-of victim
       ; If the person is not infected and the mosquito is infected, the person can get the disease from mosquito
@@ -440,7 +422,7 @@ to mosquito-entering
 
     if count mosquitos < entry-number [
         add-mosquitos
-        if random 100 < 100[
+        if random 100 < 50[
         ask one-of mosquitos with [not infected?][
           set infected? true
           set color red]
@@ -492,16 +474,6 @@ to remove-dead-patients
   ]]
 end
 
-to get-infected
-  ; When a patient is on an infected patch and they stay there until their exposure-counter reaches the threshold
-  ; the patient gets exposed.
-  let threshold 40
-  ask patients with [([contamination-level] of patch-here) > 0][
-  set exposure-counter exposure-counter + (contamination-level * 0.5)
-    if exposure-counter > threshold[person-exposed 100 "air"]
-  ]
-end
-
 to health-decrease
   ; After being infected, the patients health deteriorates, when it hits 0 the patient has
   ; a propability of survival. Then they either go home (in the simulation: die) or they die (in the simulation: remove-dead-patients)
@@ -540,6 +512,15 @@ to ventilation-clear
   ]
 end
 
+to get-infected
+  ; When a patient is on an infected patch and they stay there until their exposure-counter reaches the threshold
+  ; the patient gets exposed.
+  let threshold 40
+  ask patients with [([contamination-level] of patch-here) > 0][
+  set exposure-counter exposure-counter + (contamination-level * 0.5)
+    if exposure-counter > threshold[person-exposed 100 "air"]
+  ]
+end
 
 to emit-air-contamination
   ; Patch gets infected with a patients infection rate
@@ -641,7 +622,7 @@ CHOOSER
 size-of-room
 size-of-room
 "small" "medium" "large"
-2
+0
 
 BUTTON
 25
@@ -669,7 +650,7 @@ amount_of_patients
 amount_of_patients
 10
 144
-77.0
+144.0
 1
 1
 NIL
@@ -701,37 +682,11 @@ ventilation-hours
 ventilation-hours
 0
 100
-0.0
+13.0
 1
 1
 NIL
 HORIZONTAL
-
-SLIDER
-27
-292
-199
-325
-ratio_of_staff
-ratio_of_staff
-2
-7
-3.0
-1
-1
-NIL
-HORIZONTAL
-
-MONITOR
-916
-229
-1068
-274
-NIL
-amount-of-mosquitos
-17
-1
-11
 
 MONITOR
 806
@@ -767,10 +722,10 @@ infected-by-air
 11
 
 MONITOR
-1049
-379
-1264
-424
+1128
+423
+1343
+468
 NIL
 count mosquitos with [infected?]
 17
@@ -778,10 +733,10 @@ count mosquitos with [infected?]
 11
 
 MONITOR
-812
-300
-914
-345
+794
+58
+896
+103
 NIL
 count patients
 17
@@ -789,10 +744,10 @@ count patients
 11
 
 MONITOR
-994
-315
-1081
-360
+1128
+364
+1215
+409
 NIL
 count staffs
 17
@@ -809,6 +764,21 @@ count mosquitos
 17
 1
 11
+
+SLIDER
+25
+291
+197
+324
+number_of_beds
+number_of_beds
+0
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -1201,6 +1171,34 @@ NetLogo 6.4.0
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
+<experiments>
+  <experiment name="Testing-for-no-clear-winner" repetitions="3" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="6480"/>
+    <metric>ticks</metric>
+    <subExperiment>
+      <enumeratedValueSet variable="size-of-room">
+        <value value="&quot;small&quot;"/>
+        <value value="&quot;medium&quot;"/>
+        <value value="&quot;large&quot;"/>
+      </enumeratedValueSet>
+      <enumeratedValueSet variable="amount_of_patients">
+        <value value="100"/>
+      </enumeratedValueSet>
+      <enumeratedValueSet variable="ratio_of_staff">
+        <value value="2"/>
+      </enumeratedValueSet>
+      <enumeratedValueSet variable="ventilation-hours">
+        <value value="0"/>
+        <value value="30"/>
+        <value value="50"/>
+        <value value="70"/>
+        <value value="100"/>
+      </enumeratedValueSet>
+    </subExperiment>
+  </experiment>
+</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default

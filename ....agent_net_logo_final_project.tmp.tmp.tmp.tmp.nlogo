@@ -28,6 +28,8 @@ globals [
   infected-by-mosquito
   infected-by-air
   infected-by-staff
+
+  amount_of_patients
 ]
 
 breed [ patients patient ] ; The patients
@@ -73,6 +75,7 @@ to setup
   set patient-care-queue original-patient-list
 
   let counter 0
+  set amount_of_patients number_of_beds
   while [counter < amount_of_patients] [
     add-patient (50 + random 50) false
     set counter (counter + 1)
@@ -113,41 +116,29 @@ end
 to generate-beds
   set available-beds []
   set occupied-beds []
-
-  ;; how many rooms in x and y
   let columns floor ((max-pxcor - min-pxcor + 1) / room-size)
-  let rows    floor ((max-pycor - min-pycor + 1) / room-size)
-  let total-rooms columns * rows
+  let rows floor ((max-pycor - min-pycor + 1) / room-size)
 
-  ;; beds per room (round up so we fit at least amount_of_beds in total)
-  let beds-per-room ceiling( number_of_beds / total-rooms )
+  let spacing 7
+  let margin 2
+  ; To ensure that all room types have the same amount of max amount of patients
+  if size-of-room = "large"  [set margin 3]
 
-  ;; now pick how many beds in each row/col of a room: try square layout
-  let per-row ceiling sqrt beds-per-room
-
-  ;; compute spacing so that per-row beds fit inside room-size, leaving a small margin
-  let raw-spacing (room-size / per-row)
-  let spacing floor raw-spacing
-  if spacing < 1 [ set spacing 1 ]
-
-  ;; optional: center the grid by computing margin automatically
-  let used-space spacing * per-row
-  let margin floor ((room-size - used-space) / 2)
-
-  ;; now exactly the same loops as before, but using these computed spacing/margin
   let col 0
   while [col < columns] [
     let row 0
     while [row < rows] [
       let x0 min-pxcor + col * room-size
       let y0 min-pycor + row * room-size
-      ;; in-room grid:
+      let max-cols floor ((room-size - 2 * margin) / spacing)
+      let max-rows floor ((room-size - 2 * margin) / spacing)
+
       let i 0
-      while [i < per-row] [
+      while [i < max-cols] [
         let j 0
-        while [j < per-row] [
-          let px x0 + margin + i * spacing
-          let py y0 + margin + j * spacing
+        while [j < max-rows] [
+          let px x0 + ((room-size - (max-cols - 1) * spacing) / 2) + (i * spacing)
+          let py y0 + ((room-size - (max-rows - 1) * spacing) / 2) + (j * spacing)
           if px <= max-pxcor and py <= max-pycor [
             set available-beds lput (list px py) available-beds
           ]
@@ -158,6 +149,12 @@ to generate-beds
       set row row + 1
     ]
     set col col + 1
+  ]
+  let counter 0
+  while [counter < 144 - number_of_beds][
+    let chosen one-of available-beds
+    set available-beds remove chosen available-beds
+    set counter counter + 1
   ]
 end
 
@@ -541,13 +538,12 @@ to health-decrease
 end
 
 to new-patients
-  let sick_patients count patients with [infected?]
   let sick? false
-  if random 100 < 40 [set sick? true]
-  if length available-beds > sick_patients[add-patient 100 sick?]
-
-
-
+  if random 100 < 33 [set sick? true]
+  if length available-beds > 0 [add-patient 100 sick? print "ADDeD"]
+  ask patients with [infected?][
+  set color red
+  ]
 end
 ;--------------------------------
 ; AIRBORNE CONTAMINATION
@@ -690,21 +686,6 @@ NIL
 NIL
 1
 
-SLIDER
-24
-247
-204
-280
-amount_of_patients
-amount_of_patients
-10
-144
-144.0
-1
-1
-NIL
-HORIZONTAL
-
 BUTTON
 103
 110
@@ -731,7 +712,7 @@ ventilation-hours
 ventilation-hours
 0
 100
-13.0
+100.0
 1
 1
 NIL
@@ -815,19 +796,52 @@ count mosquitos
 11
 
 SLIDER
-33
-289
-205
-322
+25
+291
+197
+324
 number_of_beds
 number_of_beds
 0
-100
-1.0
+144
+43.0
 1
 1
 NIL
 HORIZONTAL
+
+MONITOR
+812
+190
+878
+235
+Capacity
+(count patients / number_of_beds) * 100
+17
+1
+11
+
+MONITOR
+862
+282
+1008
+327
+NIL
+length available-beds
+17
+1
+11
+
+MONITOR
+973
+84
+1171
+129
+NIL
+count patients with [infected?]
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
