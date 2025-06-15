@@ -361,7 +361,7 @@ to staff-state-changes
 
       ; if the staff is not exposed to the disease but the current patient is infected, there is a 15% chance that
       ; the staff can get exposed
-      if not exposed? and [infected?] of current-target[
+      if not exposed? and [infected?] of current-target [
         person-exposed 1 "patient"
       ]
 
@@ -641,7 +641,7 @@ CHOOSER
 size-of-room
 size-of-room
 "small" "medium" "large"
-0
+2
 
 BUTTON
 25
@@ -701,7 +701,7 @@ ventilation-hours
 ventilation-hours
 0
 100
-100.0
+0.0
 1
 1
 NIL
