@@ -30,6 +30,8 @@ globals [
   infected-by-staff
 
   amount_of_patients
+
+  amount-of-patients-died
 ]
 
 breed [ patients patient ] ; The patients
@@ -67,6 +69,8 @@ turtles-own [
 to setup
   clear-all
   ask mosquitos [ die ]
+
+  set amount-of-patients-died 0
 
   setup-patches
   generate-beds
@@ -513,7 +517,9 @@ to remove-dead-patients
     set dead-counter dead-counter + 1
     if dead-counter >= 24[
       patient-died
-      set original-patient-list remove myself original-patient-list
+      set amount-of-patients-died amount-of-patients-died + 1
+      print "HIIII"
+      set original-patient-list remove mself original-patient-list
       set patient-care-queue remove myself patient-care-queue
       set available-beds lput (list xcor ycor) available-beds
       die
@@ -527,7 +533,11 @@ to health-decrease
   set health health - health_deteriation
     if health <= 0 [
       patient-died
-      ifelse random 100 < 70 [remove-dead-patients][
+      ifelse random 100 < 70 [
+        remove-dead-patients
+        set dead? true
+        set color black
+      ][
         set original-patient-list remove self original-patient-list
         set patient-care-queue remove self patient-care-queue
         set available-beds lput (list xcor ycor) available-beds
@@ -712,83 +722,72 @@ ventilation-strength
 ventilation-strength
 0
 100
-100.0
+77.0
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-806
-364
-925
-409
-NIL
+782
+356
+946
+401
+Patients infected by staff
 infected-by-staff
 17
 1
 11
 
 MONITOR
-808
-423
-958
-468
-NIL
+784
+415
+986
+460
+Patients infected by mosquitos
 infected-by-mosquito
 17
 1
 11
 
 MONITOR
-809
-478
-917
-523
-NIL
+785
+470
+937
+515
+Patients infected by air
 infected-by-air
 17
 1
 11
 
 MONITOR
-1128
-423
-1343
-468
-NIL
-count mosquitos with [infected?]
-17
-1
-11
-
-MONITOR
 785
-63
-887
-108
-NIL
+10
+916
+55
+Amount of Patients
 count patients
 17
 1
 11
 
 MONITOR
-1128
-364
-1215
-409
-NIL
+786
+118
+896
+163
+Amount of Staff
 count staffs
 17
 1
 11
 
 MONITOR
-1131
-482
-1249
-527
+785
+180
+903
+225
 NIL
 count mosquitos
 17
@@ -804,51 +803,29 @@ number_of_beds
 number_of_beds
 0
 144
-53.0
+144.0
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-794
-121
-860
-166
-Capacity
-(count patients / number_of_beds) * 100
-17
-1
-11
-
-MONITOR
-862
-282
-1008
-327
-NIL
-length available-beds
-17
-1
-11
-
-MONITOR
-785
-10
-983
-55
-NIL
+786
+59
+891
+104
+Infected Patinets
 count patients with [infected?]
 17
 1
 11
 
 PLOT
-1023
-58
-1333
-280
-plot 1
+977
+10
+1237
+184
+Amount of Staff over hours
 Hours
 Amount of Staff
 0.0
@@ -860,7 +837,24 @@ false
 "" ""
 PENS
 "Amount of Staff at Hospital" 1.0 0 -16777216 true "" "plot count staffs"
-"Amount of Exposed Staff" 1.0 0 -7500403 true "" "plot count staffs with [exposed?]"
+
+PLOT
+988
+206
+1188
+356
+Amount of total dead patients over hours
+Hours
+Total Dead Patients
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot amount-of-patients-died"
 
 @#$#@#$#@
 ## WHAT IS IT?
