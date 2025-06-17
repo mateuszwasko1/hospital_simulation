@@ -463,8 +463,8 @@ to mosquito-dead
 end
 
 to mosquito-entering
-  if ventilation-hours > 0[
-    let entry-number floor (ventilation-hours )
+  if ventilation-strength > 0[
+    let entry-number floor (ventilation-strength )
 
     if count mosquitos < entry-number [
         add-mosquitos
@@ -540,7 +540,7 @@ end
 to new-patients
   let sick? false
   if random 100 < 33 [set sick? true]
-  if any available-beds [add-patient 100 sick? print "ADDeD"]
+  if length available-beds > 0 [add-patient 100 sick?]
   ask patients with [infected?][
   set color red
   ]
@@ -552,7 +552,7 @@ end
 ; ventilation clears contamination
 to ventilation-clear
   ask patches [
-    let decay  ventilation-hours / 100
+    let decay  ventilation-strength / 100
     set contamination-level max (list 0 (contamination-level - decay))
   ]
 end
@@ -607,7 +607,7 @@ end
 
 to simulate-wind
   ; Simulates natural ventilation, blowing in a random direction
-  let wind-strength ventilation-hours / 100
+  let wind-strength ventilation-strength / 100
 
   ask patches with [contamination-level > 0] [
     let target patch-at-heading-and-distance wind-direction 1
@@ -660,20 +660,20 @@ Hours
 30.0
 
 CHOOSER
-25
-188
-163
-233
+26
+93
+164
+138
 size-of-room
 size-of-room
 "small" "medium" "large"
-0
+1
 
 BUTTON
-25
-110
-91
-143
+23
+145
+89
+178
 NIL
 setup
 NIL
@@ -687,10 +687,10 @@ NIL
 1
 
 BUTTON
-103
-110
-166
-143
+101
+145
+164
+178
 NIL
 go
 T
@@ -704,15 +704,15 @@ NIL
 1
 
 SLIDER
-26
-335
-198
-368
-ventilation-hours
-ventilation-hours
+22
+189
+200
+222
+ventilation-strength
+ventilation-strength
 0
 100
-100.0
+77.0
 1
 1
 NIL
@@ -763,10 +763,10 @@ count mosquitos with [infected?]
 11
 
 MONITOR
-794
-58
-896
-103
+785
+63
+887
+108
 NIL
 count patients
 17
@@ -796,25 +796,25 @@ count mosquitos
 11
 
 SLIDER
-25
-291
-197
-324
+26
+50
+198
+83
 number_of_beds
 number_of_beds
 0
 144
-43.0
+144.0
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-812
-190
-878
-235
+794
+121
+860
+166
 Capacity
 (count patients / number_of_beds) * 100
 17
@@ -833,15 +833,34 @@ length available-beds
 11
 
 MONITOR
-973
-84
-1171
-129
+785
+10
+983
+55
 NIL
 count patients with [infected?]
 17
 1
 11
+
+PLOT
+1023
+58
+1333
+280
+plot 1
+Hours
+Amount of Staff
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"Amount of Staff at Hospital" 1.0 0 -16777216 true "" "plot count staffs"
+"Amount of Exposed Staff" 1.0 0 -7500403 true "" "plot count staffs with [exposed?]"
 
 @#$#@#$#@
 ## WHAT IS IT?
